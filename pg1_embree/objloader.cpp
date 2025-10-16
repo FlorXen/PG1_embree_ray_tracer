@@ -8,6 +8,7 @@ http://en.wikipedia.org/wiki/Wavefront_.obj_file
 #include "utils.h"
 #include "surface.h"
 #include "mymath.h"
+#include "colorFn.h"
 
 bool MaterialExists( std::vector<Material *> & materials, char * material_name )
 {
@@ -131,18 +132,30 @@ int LoadMTL( const char * file_name, const char * path, std::vector<Material *> 
 				if ( strstr( tmp, "Ka" ) == tmp ) // ambient color of the material
 				{
 					sscanf( tmp, "%*s %f %f %f", &material->ambient.x, &material->ambient.y, &material->ambient.z );
+					material->ambient.x = expand_canal(material->ambient.x);
+					material->ambient.y = expand_canal(material->ambient.y);
+					material->ambient.z = expand_canal(material->ambient.z);
 				}
 				if ( strstr( tmp, "Kd" ) == tmp ) // diffuse color of the material
 				{
-					sscanf( tmp, "%*s %f %f %f", &material->diffuse.x, &material->diffuse.y, &material->diffuse.z );
+					sscanf(tmp, "%*s %f %f %f", &material->diffuse.x, &material->diffuse.y, &material->diffuse.z);
+					material->diffuse.x = expand_canal(material->diffuse.x);
+					material->diffuse.y = expand_canal(material->diffuse.y);
+					material->diffuse.z = expand_canal(material->diffuse.z);
 				}
 				if ( strstr( tmp, "Ks" ) == tmp ) // specular color of the material
 				{
 					sscanf( tmp, "%*s %f %f %f", &material->specular.x, &material->specular.y, &material->specular.z );
+					material->specular.x = expand_canal(material->specular.x);
+					material->specular.y = expand_canal(material->specular.y);
+					material->specular.z = expand_canal(material->specular.z);
 				}
 				if ( strstr( tmp, "Ke" ) == tmp ) // emission color of the material
 				{
 					sscanf( tmp, "%*s %f %f %f", &material->emission.x, &material->emission.y, &material->emission.z );
+					material->emission.x = expand_canal(material->emission.x);
+					material->emission.y = expand_canal(material->emission.y);
+					material->emission.z = expand_canal(material->emission.z);
 				}
 				if ( strstr( tmp, "Ns" ) == tmp ) // specular coefficient
 				{

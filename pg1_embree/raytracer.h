@@ -52,6 +52,8 @@ private:
 	double total_timeBVH = 0.0;
 	double avg_timeRTC = 0.0;
 	double avg_timeBVH = 0.0;
+	std::mt19937 rng_{ 123 };
+	int samples_per_pixel_{ 9 };
 	
 
 	// Whitted ray tracer functions
@@ -78,7 +80,4 @@ private:
 	float ACESFilm(float x);
 	Color4f ToneMapACES(const Color4f& hdr);
 	void myIntersect(RTCRayHit& ray_hit);
-
-	std::mt19937 rng_{ 123 };
-	int samples_per_pixel_{ 9 };
 };

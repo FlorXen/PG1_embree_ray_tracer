@@ -6,7 +6,7 @@ SphericalMap::SphericalMap(const std::string& file_name) {
 	texture_ = std::make_unique<Texture>(file_name.c_str());
 }
 
-Color3f SphericalMap::texel( const float x, const float y, const float z ) const {
+Color4f SphericalMap::texel( const float x, const float y, const float z ) const {
 
 	// TODO 2 compute (u, v) coordinates from direction (x, y, z) using spherical mapping
 	double pi = 2 * asin(1.0);
@@ -56,6 +56,7 @@ Color3f SphericalMap::texel( const float x, const float y, const float z ) const
     return {
         R1.r * wy1 + R2.r * wy2,
         R1.g * wy1 + R2.g * wy2,
-        R1.b * wy1 + R2.b * wy2
+        R1.b * wy1 + R2.b * wy2,
+        1.0f
     };
 }

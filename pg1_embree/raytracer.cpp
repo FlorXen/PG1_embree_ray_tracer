@@ -3,6 +3,7 @@
 #include "objloader.h"
 #include "tutorials.h"
 #include <random>
+#include "colorFn.h"
 
 
 Raytracer::Raytracer(const int width, const int height,
@@ -124,12 +125,12 @@ void Raytracer::LoadScene(const std::string file_name)
 Color4f Raytracer::get_pixel(const int x, const int y, const float t)
 {
 
-	Color4f hdr_color{ 0.0f, 0.0f, 0.0f, 1.0f };
+	Color4f pixel_color{ 0.0f, 0.0f, 0.0f, 1.0f };
 
 	if (!use_super_sampling_) {
 
 		RTCRay primary_ray = camera_.GenerateRay(x, y);
-		hdr_color = Trace(primary_ray, 0, max_depth_, false);
+		pixel_color = Trace(primary_ray, 0, max_depth_, false);
 	}
 	else {
 
@@ -159,28 +160,26 @@ Color4f Raytracer::get_pixel(const int x, const int y, const float t)
 
 				Color4f sample_color = Trace(sample_ray, 0, max_depth_, false);
 
-				hdr_color.r += sample_color.r;
-				hdr_color.g += sample_color.g;
-				hdr_color.b += sample_color.b;
+				pixel_color.r += sample_color.r;
+				pixel_color.g += sample_color.g;
+				pixel_color.b += sample_color.b;
 			}
 		}
 
 		const float inv_samples = 1.0f / actual_samples;
-		hdr_color.r *= inv_samples;
-		hdr_color.g *= inv_samples;
-		hdr_color.b *= inv_samples;
+		pixel_color.r *= inv_samples;
+		pixel_color.g *= inv_samples;
+		pixel_color.b *= inv_samples;
 	}
+	float exposure = 0.7f;
+	pixel_color.r *= exposure;
+	pixel_color.g *= exposure;
+	pixel_color.b *= exposure;
 	
-
 	// ========== ACES FILMIC TONE MAPPING ========== Autor: Claude Sonnet 4.5
-	// Volitelná expozice (1.0 = normální, vyšší = světlejší)
-	float exposure = 0.8f;
-	hdr_color.r *= exposure;
-	hdr_color.g *= exposure;
-	hdr_color.b *= exposure;
+	pixel_color = ToneMapACES(pixel_color);
 
-	// Použít ACES tone mapping
-	return ToneMapACES(hdr_color);
+	return compress_color(pixel_color);
 }
 
 Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
@@ -189,8 +188,9 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
 	if (depth >= max_depth) {
 		Vector3 ray_dir(ray.dir_x, ray.dir_y, ray.dir_z);
 		ray_dir.Normalize();
-		Color3f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
-		return Color4f{ env_color.r, env_color.g, env_color.b, 1.0f };
+		
+		Color4f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
+		return env_color;
 	}
 
 	// FindNearestIntersection
@@ -241,8 +241,8 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
 	if (ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
 		Vector3 ray_dir(ray.dir_x, ray.dir_y, ray.dir_z);
 		ray_dir.Normalize();
-		Color3f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
-		return Color4f{ env_color.r, env_color.g, env_color.b, 1.0f };
+		Color4f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
+		return env_color;
 	}
 
 	// Get intersection data
@@ -300,7 +300,7 @@ Color4f Raytracer::CalculatePhongIllumination(
 {
 	// Parametry světla
 	Vector3 light_pos(200.0f, 300.0f, 500.0f);
-	Vector3 light_color(0.7f, 0.7f, 0.7f);
+	Color4f light_color{ 1.0f, 1.0f, 1.0f, 1.0f };
 	Vector3 ambient = material->ambient;
 	Vector3 specular = material->specular;
 	float shininess = material->shininess;
@@ -310,10 +310,12 @@ Color4f Raytracer::CalculatePhongIllumination(
 		RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE, 1, &tex_coord.u, 2);
 
 	Color3f tex_color{ 1.0f, 1.0f, 1.0f };
+	Color4f tex_color4f{ 1.0f, 1.0f, 1.0f, 1.0f };
 	if (material->get_texture(Material::kDiffuseMapSlot)) {
 		tex_color = material->get_texture(Material::kDiffuseMapSlot)->get_texel(tex_coord.u, 1.0 - tex_coord.v);
+		tex_color4f = expand_color(Color4f{ tex_color.r, tex_color.g, tex_color.b, 1.0f });
 	}
-	Vector3 diffuse = material->diffuse * Vector3(tex_color.r, tex_color.g, tex_color.b);
+	Vector3 diffuse = material->diffuse * Vector3(tex_color4f.r, tex_color4f.g, tex_color4f.b);
 
 	// Směr ke světlu
 	Vector3 light_dir = light_pos - hit_point;
@@ -342,20 +344,27 @@ Color4f Raytracer::CalculatePhongIllumination(
 	reflect_dir.Normalize();
 	float RdotV = (std::max)(0.0f, reflect_dir.DotProduct(view_dir));
 
-	Vector3 phong = ambient;
+	Color4f phong{ ambient.x, ambient.y, ambient.z };
 	if (visible || !hard_shadows_) {
 		if (material->illum == 3) {
 			// Žádná difuze pro průhledný material (přidáno po konverzaci s AI)
 		}
 		else {
-			phong += diffuse * NdotL;
+			phong.r += diffuse.x * NdotL;
+			phong.g += diffuse.y * NdotL;
+			phong.b += diffuse.z * NdotL;
 		}
 
 		// pruhledný materiál má bílou spekulární složku (info z přednášky)
 		Vector3 spec_color = (material->illum == 3) ? Vector3(1.0f, 1.0f, 1.0f) : specular;
-		phong += spec_color * std::pow(RdotV, shininess);
+		phong.r += spec_color.x * std::pow(RdotV, shininess);
+		phong.g += spec_color.y * std::pow(RdotV, shininess);
+		phong.b += spec_color.z * std::pow(RdotV, shininess);
 	}
-	phong = light_color * phong;
+	light_color = expand_color(light_color);
+	phong.r *= light_color.r;
+	phong.g *= light_color.g;
+	phong.b *= light_color.b;
 
 	// REFLEXE
 	Color4f reflected_color = CalculateReflectedColor(view_dir, normal, hit_point, depth, max_depth, is_inside);
@@ -413,9 +422,9 @@ Color4f Raytracer::CalculatePhongIllumination(
 
 	// Výsledná barva
 	return Color4f{
-		(std::min)(1.0f, (phong.x + reflected_color.r * R + refracted_color.r * (1.0f - R)) * attenuation.x),
-		(std::min)(1.0f, (phong.y + reflected_color.g * R + refracted_color.g * (1.0f - R)) * attenuation.y),
-		(std::min)(1.0f, (phong.z + reflected_color.b * R + refracted_color.b * (1.0f - R)) * attenuation.z),
+		(std::min)(1.0f, (phong.r + reflected_color.r * R + refracted_color.r * (1.0f - R)) * attenuation.x),
+		(std::min)(1.0f, (phong.g + reflected_color.g * R + refracted_color.g * (1.0f - R)) * attenuation.y),
+		(std::min)(1.0f, (phong.b + reflected_color.b * R + refracted_color.b * (1.0f - R)) * attenuation.z),
 		1.0f
 	};
 }
@@ -465,11 +474,6 @@ Color4f Raytracer::ToneMapACES(const Color4f& hdr)
 	float r = ACESFilm(hdr.r);
 	float g = ACESFilm(hdr.g);
 	float b = ACESFilm(hdr.b);
-
-	// Gamma korekce
-	r = std::pow(r, 1.0f / 2.2f);
-	g = std::pow(g, 1.0f / 2.2f);
-	b = std::pow(b, 1.0f / 2.2f);
 
 	return Color4f{ r, g, b, 1.0f };
 }

@@ -168,6 +168,7 @@
     <ClInclude Include="..\..\libs\imgui\stb_truetype.h" />
     <ClInclude Include="BVH.h" />
     <ClInclude Include="camera.h" />
+    <ClInclude Include="colorFn.h" />
     <ClInclude Include="material.h" />
     <ClInclude Include="matrix3x3.h" />
     <ClInclude Include="mymath.h" />
@@ -194,6 +195,7 @@
     <ClCompile Include="..\..\libs\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="BVH.cpp" />
     <ClCompile Include="camera.cpp" />
+    <ClCompile Include="colorFn.cpp" />
     <ClCompile Include="material.cpp" />
     <ClCompile Include="matrix3x3.cpp" />
     <ClCompile Include="mymath.cpp" />
