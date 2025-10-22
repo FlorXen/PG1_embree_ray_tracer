@@ -50,4 +50,9 @@ private:
 	std::mutex tex_data_lock_;
 		
 	std::atomic<bool> finish_request_{ false };	
+
+	void GenerateSpiralTileOrder(int tiles_x, int tiles_y, std::vector<std::pair<int, int>>& tiles);
+	void RenderTiles(const std::vector<std::pair<int, int>>& spiral_tiles,
+					std::atomic<size_t>& next_tile_index,
+					int tile_size, float t, float* render_buffer);
 };
