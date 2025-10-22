@@ -69,6 +69,9 @@ Color3f Texture::get_texel( const int x, const int y ) const
 {	
 	//assert( ( x >= 0 && x < width_ ) && ( y >= 0 && y < height_ ) );
 
+	if (!((x >= 0 && x < width_) && (y >= 0 && y < height_)))
+		return Color3f{ 0.0f, 0.0f, 0.0f };
+
 	const int offset = y * scan_width_ + x * pixel_size_;
 	
 	if ( pixel_size_ > 4 * 1 ) // HDR, EXR

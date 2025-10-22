@@ -85,46 +85,124 @@ Color4f SimpleGuiDX11::get_pixel( const int x, const int y, const float t )
 
 void SimpleGuiDX11::Producer()
 {
-	float * local_data = new float[width_*height_ * 4];
+	const unsigned int num_threads = (std::max)(1u, std::thread::hardware_concurrency() - 1);
+	const int tile_size = 32;
+	const int tiles_x = (width_ + tile_size - 1) / tile_size;
+	const int tiles_y = (height_ + tile_size - 1) / tile_size;
 
-	float t = 0.0f; // time
+	// Vytvoreni spiralovitych dlazdic
+	std::vector<std::pair<int, int>> spiral_tiles;
+	GenerateSpiralTileOrder(tiles_x, tiles_y, spiral_tiles);
+
+	float* render_buffer = new float[width_ * height_ * 4];
+
+	std::atomic<size_t> next_tile_index(0);
+	std::vector<std::thread> workers;
+	workers.reserve(num_threads);
+
+	float t = 0.0f;
 	auto t0 = std::chrono::high_resolution_clock::now();
 
-	// refinenment loop
-	//for ( float t = 0.0f; t < 1e+3 && !finish_request_.load( std::memory_order_acquire ); t += float( 1e-1 ) )
-	while ( !finish_request_.load( std::memory_order_acquire ) )
+	while (!finish_request_.load(std::memory_order_acquire))
 	{
 		auto t1 = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<float> dt = t1 - t0;
 		t += dt.count();
 		t0 = t1;
 
-		// compute rendering
-		//std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
-//#pragma omp parallel for
-		for ( int y = 0; y < height_; ++y )
-		{		
-			for ( int x = 0; x < width_; ++x )
-			{				
-				const Color4f pixel = get_pixel( x, y, t );
-				const int offset = ( y * width_ + x ) * 4;
+		// Reset indexu pro novy frame
+		next_tile_index.store(0, std::memory_order_release);
 
-				local_data[offset] = pixel.r;
-				local_data[offset + 1] = pixel.g;
-				local_data[offset + 2] = pixel.b;
-				local_data[offset + 3] = pixel.a;
-				//pixel.copy( local_data[offset] );
-			}
+		// Spusteni vlaken
+		for (unsigned int i = 0; i < num_threads; ++i) {
+			workers.emplace_back([&, tile_size, t]() {
+				RenderTiles(spiral_tiles, next_tile_index, tile_size, t, render_buffer);
+				});
 		}
 
-		// write rendering results
+		// Èekání na dokonèení
+		for (auto& worker : workers) {
+			worker.join();
+		}
+		workers.clear();
+
+		// Kopírování výsledkù do textury
 		{
-			std::lock_guard<std::mutex> lock( tex_data_lock_ );
-			memcpy( tex_data_, local_data, width_ * height_ * 4 * sizeof( float ) );			
-		} // lock release
+			std::lock_guard<std::mutex> lock(tex_data_lock_);
+			memcpy(tex_data_, render_buffer, width_ * height_ * 4 * sizeof(float));
+		}
 	}
 
-	delete[] local_data;
+	delete[] render_buffer;
+}
+
+void SimpleGuiDX11::GenerateSpiralTileOrder(int tiles_x, int tiles_y, std::vector<std::pair<int, int>>& tiles)
+{
+	tiles.clear();
+	tiles.reserve(tiles_x * tiles_y);
+
+	int center_x = tiles_x / 2;
+	int center_y = tiles_y / 2;
+
+	std::vector<std::vector<bool>> visited(tiles_x, std::vector<bool>(tiles_y, false));
+
+	// Vpravo, dolu, vlevo, nahoru
+	const int dx[] = { 1, 0, -1, 0 };
+	const int dy[] = { 0, 1, 0, -1 };
+
+	int x = center_x, y = center_y;
+	int direction = 0;
+	int steps = 1;
+
+	tiles.push_back({ x, y });
+	visited[x][y] = true;
+
+	// Tvorba spiraly
+	while (tiles.size() < static_cast<size_t>(tiles_x * tiles_y)) {
+		for (int i = 0; i < 2; ++i) {
+			for (int j = 0; j < steps; ++j) {
+				x += dx[direction];
+				y += dy[direction];
+
+				if (x >= 0 && x < tiles_x && y >= 0 && y < tiles_y && !visited[x][y]) {
+					tiles.push_back({ x, y });
+					visited[x][y] = true;
+				}
+			}
+			direction = (direction + 1) % 4;
+		}
+		steps++;
+	}
+}
+
+void SimpleGuiDX11::RenderTiles(const std::vector<std::pair<int, int>>& spiral_tiles,
+std::atomic<size_t>& next_tile_index,
+	int tile_size, float t, float* render_buffer)
+{
+	while (true) {
+		size_t tile_idx = next_tile_index.fetch_add(1, std::memory_order_relaxed);
+		if (tile_idx >= spiral_tiles.size()) {
+			break;
+		}
+
+		const auto& tile = spiral_tiles[tile_idx];
+		int start_x = tile.first * tile_size;
+		int start_y = tile.second * tile_size;
+		int end_x = (std::min)(start_x + tile_size, width_);
+		int end_y = (std::min)(start_y + tile_size, height_);
+
+		for (int y = start_y; y < end_y; ++y) {
+			for (int x = start_x; x < end_x; ++x) {
+				const Color4f pixel = get_pixel(x, y, t);
+				const int offset = (y * width_ + x) * 4;
+
+				render_buffer[offset] = pixel.r;
+				render_buffer[offset + 1] = pixel.g;
+				render_buffer[offset + 2] = pixel.b;
+				render_buffer[offset + 3] = pixel.a;
+			}
+		}
+	}
 }
 
 int SimpleGuiDX11::width() const
