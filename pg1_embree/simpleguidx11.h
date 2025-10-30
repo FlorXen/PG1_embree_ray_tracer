@@ -55,4 +55,6 @@ private:
 	void RenderTiles(const std::vector<std::pair<int, int>>& spiral_tiles,
 					std::atomic<size_t>& next_tile_index,
 					int tile_size, float t, float* render_buffer);
+	bool render_next{ true };
+	float* render_buffer{ nullptr };
 };

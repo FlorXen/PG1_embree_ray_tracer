@@ -94,46 +94,45 @@ void SimpleGuiDX11::Producer()
 	std::vector<std::pair<int, int>> spiral_tiles;
 	GenerateSpiralTileOrder(tiles_x, tiles_y, spiral_tiles);
 
-	float* render_buffer = new float[width_ * height_ * 4];
+	render_buffer = new float[width_ * height_ * 4];
 
 	std::atomic<size_t> next_tile_index(0);
-	std::vector<std::thread> workers;
-	workers.reserve(num_threads);
+	std::vector<std::thread> thread_pool;
+	thread_pool.reserve(num_threads);
 
 	float t = 0.0f;
 	auto t0 = std::chrono::high_resolution_clock::now();
 
 	while (!finish_request_.load(std::memory_order_acquire))
 	{
-		auto t1 = std::chrono::high_resolution_clock::now();
-		std::chrono::duration<float> dt = t1 - t0;
-		t += dt.count();
-		t0 = t1;
+		if (render_next) {
+			render_next = false;
+			auto t1 = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<float> dt = t1 - t0;
+			t += dt.count();
+			t0 = t1;
 
-		// Reset indexu pro novy frame
-		next_tile_index.store(0, std::memory_order_release);
+			// Reset indexu pro novy frame
+			next_tile_index.store(0, std::memory_order_release);
 
-		// Spusteni vlaken
-		for (unsigned int i = 0; i < num_threads; ++i) {
-			workers.emplace_back([&, tile_size, t]() {
-				RenderTiles(spiral_tiles, next_tile_index, tile_size, t, render_buffer);
-				});
+			// Spusteni vlaken
+			for (unsigned int i = 0; i < num_threads; ++i) {
+				thread_pool.emplace_back([&, tile_size, t]() {
+					RenderTiles(spiral_tiles, next_tile_index, tile_size, t, render_buffer);
+					});
+			}
+
+			// Cekani na dokonceni vlaken
+			for (auto& thread : thread_pool) {
+				thread.join();
+			}
+			thread_pool.clear();
 		}
-
-		// Èekání na dokonèení
-		for (auto& worker : workers) {
-			worker.join();
-		}
-		workers.clear();
-
-		// Kopírování výsledkù do textury
-		{
-			std::lock_guard<std::mutex> lock(tex_data_lock_);
-			memcpy(tex_data_, render_buffer, width_ * height_ * 4 * sizeof(float));
-		}
+		
 	}
 
 	delete[] render_buffer;
+	render_buffer = nullptr;
 }
 
 void SimpleGuiDX11::GenerateSpiralTileOrder(int tiles_x, int tiles_y, std::vector<std::pair<int, int>>& tiles)
@@ -251,14 +250,20 @@ int SimpleGuiDX11::MainLoop()
 			HRESULT hr = g_pd3dDeviceContext->Map( tex_id_, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped ); // D3D11_MAP_WRITE, D3D11_MAP_WRITE_DISCARD
 
 			{
-				std::lock_guard<std::mutex> lock( tex_data_lock_ );
-				memcpy( mapped.pData, tex_data_, mapped.RowPitch * height_ );
+				std::lock_guard<std::mutex> lock(tex_data_lock_);
+				if (render_buffer) {
+					memcpy(tex_data_, render_buffer, width_ * height_ * 4 * sizeof(float));
+				}
+				memcpy(mapped.pData, tex_data_, mapped.RowPitch * height_);
 			}
 			
 			g_pd3dDeviceContext->Unmap( tex_id_, 0 );
 		}
 
 		ImGui::Begin( "Image", 0, ImGuiWindowFlags_NoResize );
+		if (ImGui::Button("Render next")) {
+			render_next = true;
+		}
 		ImGui::Image( ImTextureID( tex_view_ ), ImVec2( float( width_ ), float( height_ ) ) );
 		ImGui::End();
 

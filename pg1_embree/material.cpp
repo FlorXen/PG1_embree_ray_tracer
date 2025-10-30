@@ -20,6 +20,7 @@ Material::Material()
 
 	ior = -1;
 	illum = 0;
+	shader = 0;
 
 	memset( textures_, 0, sizeof( *textures_ ) * NO_TEXTURES );
 

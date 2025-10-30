@@ -5,6 +5,7 @@
 #include <random>
 #include "colorFn.h"
 
+#define M_PI	3.14159265358979323846
 
 Raytracer::Raytracer(const int width, const int height,
 	const float fov_y, const Vector3 view_from, const Vector3 view_at,
@@ -127,12 +128,6 @@ Color4f Raytracer::get_pixel(const int x, const int y, const float t)
 
 	Color4f pixel_color{ 0.0f, 0.0f, 0.0f, 1.0f };
 
-	if (!use_super_sampling_) {
-
-		RTCRay primary_ray = camera_.GenerateRay(x, y);
-		pixel_color = Trace(primary_ray, 0, max_depth_, false);
-	}
-	else {
 
 		const int sqrt_samples = static_cast<int>(std::sqrt(samples_per_pixel_));
 		const int actual_samples = sqrt_samples * sqrt_samples;
@@ -158,7 +153,7 @@ Color4f Raytracer::get_pixel(const int x, const int y, const float t)
 					static_cast<float>(y) + offset_y
 				);
 
-				Color4f sample_color = Trace(sample_ray, 0, max_depth_, false);
+				Color4f sample_color = Trace(sample_ray, 0, max_depth_);
 
 				pixel_color.r += sample_color.r;
 				pixel_color.g += sample_color.g;
@@ -170,27 +165,19 @@ Color4f Raytracer::get_pixel(const int x, const int y, const float t)
 		pixel_color.r *= inv_samples;
 		pixel_color.g *= inv_samples;
 		pixel_color.b *= inv_samples;
-	}
-	float exposure = 0.7f;
-	pixel_color.r *= exposure;
-	pixel_color.g *= exposure;
-	pixel_color.b *= exposure;
+
 	
 	// ========== ACES FILMIC TONE MAPPING ========== Autor: Claude Sonnet 4.5
-	pixel_color = ToneMapACES(pixel_color);
+	//pixel_color = ToneMapACES(pixel_color);
 
 	return compress_color(pixel_color);
 }
 
-Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
+Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 {
 	// Check recursion depth
 	if (depth >= max_depth) {
-		Vector3 ray_dir(ray.dir_x, ray.dir_y, ray.dir_z);
-		ray_dir.Normalize();
-		
-		Color4f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
-		return env_color;
+		return Color4f{0.0f, 0.0f, 0.0f, 1.0f}; // black background
 	}
 
 	// FindNearestIntersection
@@ -205,44 +192,12 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
 	ray_hit.ray = ray;
 	ray_hit.hit = hit;
 
-	// ---------------------------------------------------------
-	auto start = std::chrono::high_resolution_clock::now();
-	if (useBVH) {
-		bvh.FindHit(ray_hit);
-	}
-	else {
-		RTCIntersectContext context;
-		rtcInitIntersectContext(&context);
-		rtcIntersect1(scene_, &context, &ray_hit);
-	}
-	auto end = std::chrono::high_resolution_clock::now();
-	double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-	if (useBVH) {
-		total_timeBVH += elapsed_ms;
-		iterationBVH++;
-		if (iterationBVH % 10000 == 0) {
-			avg_timeBVH = total_timeBVH / 10000;
-			total_timeBVH = 0.0;
-			iterationBVH = 0;
-		}
-	}
-	else {
-		total_timeRTC += elapsed_ms;
-		iterationRTC++;
-		if (iterationRTC % 10000 == 0) {
-			avg_timeRTC = total_timeRTC / 10000;
-			total_timeRTC = 0.0;
-			iterationRTC = 0;
-		}
-	}
-	// ---------------------------------------------------------
+	RTCIntersectContext context;
+	rtcInitIntersectContext(&context);
+	rtcIntersect1(scene_, &context, &ray_hit);
 
 	if (ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-		Vector3 ray_dir(ray.dir_x, ray.dir_y, ray.dir_z);
-		ray_dir.Normalize();
-		Color4f env_color = environment_map_.texel(ray_dir.x, ray_dir.y, ray_dir.z);
-		return env_color;
+		return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f }; // black background
 	}
 
 	// Get intersection data
@@ -265,197 +220,135 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth, bool is_inside)
 		return Color4f{ 1.0f, 0.0f, 0.0f, 1.0f };
 	}
 
-	bool is_entering = ray_dir.DotProduct(surface_normal) < 0.0f;
-	// původní normála před otočením pro výpočet refrakce
-	Vector3 geometric_normal = surface_normal;
-	// Otočení normály pokud je potřeba (kvůli osvětlení)
-	if (!is_entering) {
-		surface_normal = -surface_normal;
-	}
-
-	// Calculate hit point
 	Vector3 hit_point(
 		ray.org_x + ray_hit.ray.tfar * ray.dir_x,
 		ray.org_y + ray_hit.ray.tfar * ray.dir_y,
 		ray.org_z + ray_hit.ray.tfar * ray.dir_z
 	);
 
-	Vector3 view_dir = -ray_dir;
-	return CalculatePhongIllumination(geometry, ray_hit, hit_point, surface_normal, geometric_normal,
-		hit_material, view_dir, depth, max_depth, is_inside, is_entering);
+	if (hit_material->shader == 6) {  // Mirror material
+
+		// perfect reflection direction: r = d - 2(d·n)n
+		Vector3 reflection = ray_dir - surface_normal * (2.0f * ray_dir.DotProduct(surface_normal));
+		reflection.Normalize();
+
+		Color4f reflected_color = Trace(make_secondary_ray(hit_point, reflection), depth + 1, max_depth);
+
+		Color4f result;
+		result.r = reflected_color.r * hit_material->specular.x;
+		result.g = reflected_color.g * hit_material->specular.y;
+		result.b = reflected_color.b * hit_material->specular.z;
+		result.a = 1.0f;
+
+		return result;
+	}
+	else {  // Diffuse material
+
+		Vector3 L_e = hit_material->emission;
+
+		if (L_e.x > 0.0f || L_e.y > 0.0f || L_e.z > 0.0f) {
+			return Color4f{ L_e.x, L_e.y, L_e.z, 1.0f }; // we hit a source and stopped our light path here
+		}
+
+		if (ray_dir.DotProduct(surface_normal) >= 0.0f) {
+			surface_normal = -surface_normal;
+		}
+
+		Vector3 omega_i;
+		float pdf;
+
+		Raytracer::sample_hemisphere(surface_normal, omega_i, pdf);
+
+		Color4f L_i = Trace(make_secondary_ray(hit_point, omega_i), depth + 1, max_depth);
+
+		Vector3 albedo = hit_material->diffuse;
+		Vector3 f_r = albedo / M_PI;
+		float cos_theta = omega_i.DotProduct(surface_normal);
+		Color4f f_r_color{ f_r.x, f_r.y, f_r.z, 1.0f };
+
+
+		Color4f L_r;
+		//L_r.r = f_r_color.r * L_i.r * cos_theta / pdf;
+		//L_r.g = f_r_color.g * L_i.g * cos_theta / pdf;
+		//L_r.b = f_r_color.b * L_i.b * cos_theta / pdf;
+		L_r.a = 1.0f;
+
+		L_r.r = albedo.x * L_i.r ;
+		L_r.g = albedo.y * L_i.g;
+		L_r.b = albedo.z * L_i.b;
+
+		return L_r;
+	}
 }
 
-Color4f Raytracer::CalculatePhongIllumination(
-	const RTCGeometry& geometry,
-	const RTCRayHit& ray_hit,
-	const Vector3& hit_point,
-	const Vector3& normal,
-	const Vector3& geometric_normal,
-	const Material* material,
-	const Vector3& view_dir,
-	int depth,
-	int max_depth,
-	bool is_inside,
-	bool is_entering)
-{
-	// Parametry světla
-	Vector3 light_pos(200.0f, 300.0f, 500.0f);
-	Color4f light_color{ 1.0f, 1.0f, 1.0f, 1.0f };
-	Vector3 ambient = material->ambient;
-	Vector3 specular = material->specular;
-	float shininess = material->shininess;
+RTCRay Raytracer::make_secondary_ray(Vector3 origin, Vector3 direction) {
+	RTCRay secondary_ray;
+	secondary_ray.org_x = origin.x;
+	secondary_ray.org_y = origin.y;
+	secondary_ray.org_z = origin.z;
+	secondary_ray.dir_x = direction.x;
+	secondary_ray.dir_y = direction.y;
+	secondary_ray.dir_z = direction.z;
+	secondary_ray.tnear = 0.001f;
+	secondary_ray.tfar = FLT_MAX;
 
-	Coord2f tex_coord;
-	rtcInterpolate0(geometry, ray_hit.hit.primID, ray_hit.hit.u, ray_hit.hit.v,
-		RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE, 1, &tex_coord.u, 2);
-
-	Color3f tex_color{ 1.0f, 1.0f, 1.0f };
-	Color4f tex_color4f{ 1.0f, 1.0f, 1.0f, 1.0f };
-	if (material->get_texture(Material::kDiffuseMapSlot)) {
-		tex_color = material->get_texture(Material::kDiffuseMapSlot)->get_texel(tex_coord.u, 1.0 - tex_coord.v);
-		tex_color4f = expand_color(Color4f{ tex_color.r, tex_color.g, tex_color.b, 1.0f });
-	}
-	Vector3 diffuse = material->diffuse * Vector3(tex_color4f.r, tex_color4f.g, tex_color4f.b);
-
-	// Směr ke světlu
-	Vector3 light_dir = light_pos - hit_point;
-	float light_distance = light_dir.L2Norm();
-	light_dir.Normalize();
-
-	// Shadow ray
-	RTCRay shadow_ray;
-	shadow_ray.org_x = hit_point.x + normal.x * 0.001f;
-	shadow_ray.org_y = hit_point.y + normal.y * 0.001f;
-	shadow_ray.org_z = hit_point.z + normal.z * 0.001f;
-	shadow_ray.dir_x = light_dir.x;
-	shadow_ray.dir_y = light_dir.y;
-	shadow_ray.dir_z = light_dir.z;
-	shadow_ray.tnear = 0.001f;
-	shadow_ray.tfar = light_distance;
-
-	RTCIntersectContext context;
-	rtcInitIntersectContext(&context);
-	rtcOccluded1(scene_, &context, &shadow_ray);
-	bool visible = (shadow_ray.tfar >= 0.0f);
-
-	// Phongovy složky
-	float NdotL = (std::max)(0.0f, normal.DotProduct(light_dir));
-	Vector3 reflect_dir = 2.0f * NdotL * normal - light_dir;
-	reflect_dir.Normalize();
-	float RdotV = (std::max)(0.0f, reflect_dir.DotProduct(view_dir));
-
-	Color4f phong{ ambient.x, ambient.y, ambient.z };
-	if (visible || !hard_shadows_) {
-		if (material->illum == 3) {
-			// Žádná difuze pro průhledný material (přidáno po konverzaci s AI)
-		}
-		else {
-			phong.r += diffuse.x * NdotL;
-			phong.g += diffuse.y * NdotL;
-			phong.b += diffuse.z * NdotL;
-		}
-
-		// pruhledný materiál má bílou spekulární složku (info z přednášky)
-		Vector3 spec_color = (material->illum == 3) ? Vector3(1.0f, 1.0f, 1.0f) : specular;
-		phong.r += spec_color.x * std::pow(RdotV, shininess);
-		phong.g += spec_color.y * std::pow(RdotV, shininess);
-		phong.b += spec_color.z * std::pow(RdotV, shininess);
-	}
-	light_color = expand_color(light_color);
-	phong.r *= light_color.r;
-	phong.g *= light_color.g;
-	phong.b *= light_color.b;
-
-	// REFLEXE
-	Color4f reflected_color = CalculateReflectedColor(view_dir, normal, hit_point, depth, max_depth, is_inside);
-
-	// REFRAKCE
-
-	// Pro výpočet IOR použitá normála před otočením
-	Vector3 ray_dir = -view_dir;
-	float eta1 = is_inside ? material->ior : IOR_AIR;
-	float eta2 = is_inside ? IOR_AIR : material->ior;
-	float cosI = std::abs(ray_dir.DotProduct(geometric_normal));
-	float F0 = std::pow((eta1 - eta2) / (eta1 + eta2), 2);
-	float R = F0 + (1.0f - F0) * std::pow(1.0f - cosI, 5.0f);
-
-	Color4f refracted_color{ 0,0,0,1 };
-	Vector3 attenuation(1.0f, 1.0f, 1.0f);
-
-	if (material->illum == 3 && depth < max_depth) {
-		float eta = eta1 / eta2;
-
-		float sinT2 = eta * eta * (1.0f - cosI * cosI);
-		bool tir = sinT2 > 1.0f;
-
-		if (tir) {
-			R = 1.0f;
-		}
-		else {
-			float cosT = std::sqrt(1.0f - sinT2);
-
-			Vector3 refract_normal = is_entering ? geometric_normal : -geometric_normal;
-			Vector3 refracted_dir = eta * ray_dir + (eta * cosI - cosT) * refract_normal;
-			refracted_dir.Normalize();
-
-			RTCRay refracted_ray;
-			const float eps = 0.001f;
-			refracted_ray.org_x = hit_point.x + refracted_dir.x * eps;
-			refracted_ray.org_y = hit_point.y + refracted_dir.y * eps;
-			refracted_ray.org_z = hit_point.z + refracted_dir.z * eps;
-			refracted_ray.dir_x = refracted_dir.x;
-			refracted_ray.dir_y = refracted_dir.y;
-			refracted_ray.dir_z = refracted_dir.z;
-			refracted_ray.tnear = 0.001f;
-			refracted_ray.tfar = FLT_MAX;
-
-			// Rekurze s otočeným stavem is_inside
-			refracted_color = Trace(refracted_ray, depth + 1, max_depth, !is_inside);
-		}
-		if (is_inside) {
-			float distance_inside = ray_hit.ray.tfar;
-			attenuation.x = std::exp(-material->attenuation.x * distance_inside);
-			attenuation.y = std::exp(-material->attenuation.y * distance_inside);
-			attenuation.z = std::exp(-material->attenuation.z * distance_inside);
-		}
-	}
-
-	// Výsledná barva
-	return Color4f{
-		(std::min)(1.0f, (phong.r + reflected_color.r * R + refracted_color.r * (1.0f - R)) * attenuation.x),
-		(std::min)(1.0f, (phong.g + reflected_color.g * R + refracted_color.g * (1.0f - R)) * attenuation.y),
-		(std::min)(1.0f, (phong.b + reflected_color.b * R + refracted_color.b * (1.0f - R)) * attenuation.z),
-		1.0f
-	};
+	return secondary_ray;
 }
 
-Color4f Raytracer::CalculateReflectedColor(
-	const Vector3& view_dir,
-	const Vector3& normal,
-	const Vector3& hit_point,
-	int depth,
-	int max_depth,
-	bool is_inside)
+void Raytracer::sample_hemisphere(Vector3 normal, Vector3& omega_i, float& pdf)
 {
-	if (depth < max_depth) {
-		Vector3 reflected_dir = view_dir - 2.0f * view_dir.DotProduct(normal) * normal;
-		reflected_dir.Normalize();
+	// Generate two random numbers in [0, 1)
+	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+	float xi1 = dist(rng_);
+	float xi2 = dist(rng_);
 
-		RTCRay reflected_ray;
-		reflected_ray.org_x = hit_point.x + normal.x * 0.01f;
-		reflected_ray.org_y = hit_point.y + normal.y * 0.01f;
-		reflected_ray.org_z = hit_point.z + normal.z * 0.01f;
-		reflected_ray.dir_x = reflected_dir.x;
-		reflected_ray.dir_y = reflected_dir.y;
-		reflected_ray.dir_z = reflected_dir.z;
-		reflected_ray.tnear = 0.001f;
-		reflected_ray.tfar = FLT_MAX;
+	xi2 = (std::max)(xi2, 1e-6f);
 
-		return Trace(reflected_ray, depth + 1, max_depth, is_inside);
+	// Cosine-weighted hemisphere sampling
+	float x = std::cos(2.0f * M_PI * xi1) * std::sqrt(1.0f - xi2);
+	float y = std::sin(2.0f * M_PI * xi1) * std::sqrt(1.0f - xi2);
+	float z = std::sqrt(xi2);
+
+	Vector3 local_direction(x, y, z);
+
+	// Transform from local space to world space
+	omega_i = local_to_world(local_direction, normal);
+
+	// PDF for cosine-weighted hemisphere sampling = cos(theta) / pi
+	// Since z = sqrt(xi2) = cos(theta) in local space:
+	pdf = z / M_PI;
+}
+
+Vector3 Raytracer::local_to_world(Vector3 local_dir, Vector3 normal)
+{
+	// Create orthonormal basis (o1, o2, n) around normal n
+
+	// Step 1: Find any non-parallel vector to normal
+	Vector3 a;
+	if (std::abs(normal.x) > 0.9f) {
+		a = Vector3(0.0f, 1.0f, 0.0f);  // Use (0,1,0) if normal is close to (1,0,0)
 	}
 	else {
-		return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f };
+		a = Vector3(1.0f, 0.0f, 0.0f);  // Otherwise use (1,0,0)
 	}
+
+	// Step 2: o2 = n × a (perpendicular to both n and a)
+	Vector3 o2 = normal.CrossProduct(a);
+	o2.Normalize();
+
+	// Step 3: o1 = o2 × n (completes the orthonormal basis)
+	Vector3 o1 = o2.CrossProduct(normal);
+	o1.Normalize();
+
+	// Step 4: Transform from local (RS) to world (WS)
+	// T_RS->WS = [o1 | o2 | n]
+	// world_dir = o1 * local.x + o2 * local.y + n * local.z
+	Vector3 world_dir =
+		o1 * local_dir.x +
+		o2 * local_dir.y +
+		normal * local_dir.z;
+
+	return world_dir;
 }
 
 float Raytracer::ACESFilm(float x)
@@ -494,43 +387,9 @@ int Raytracer::Ui()
 	ImGui::Text("Materials = %d", materials_.size());
 	ImGui::Separator();
 	ImGui::Checkbox("Vsync", &vsync_);
-	ImGui::Checkbox("Hard Shadows", &hard_shadows_);
-	ImGui::Checkbox("Super sampling", &use_super_sampling_);
-	ImGui::Separator();
-
-	ImGui::Checkbox("Intersect with BVH", &useBVH);
-	ImGui::Text("Avg time for BVH: %.6f ms", avg_timeBVH);
-	ImGui::Text("Avg time for rtcIntersect1: %.6f ms", avg_timeRTC);
 
 	ImGui::Separator();
-	ImGui::SliderInt("Max ray depth", &max_depth_, 1, 15);
-
-	ImGui::Separator();
-	ImGui::SliderFloat("X", &x, -300.0f, 300.0f);
-	if (x != lastX) {
-		lastX = x;
-		Vector3 cam_pos = camera_.getPosition();
-		camera_.ChangePosition(Vector3(x, cam_pos.y, cam_pos.z));
-	}
-
-	ImGui::SliderFloat("Y", &z, -300.0f, 300.0f);
-	if (z != lastZ) {
-		lastZ = z;
-		Vector3 cam_pos = camera_.getPosition();
-		camera_.ChangePosition(Vector3(cam_pos.x, cam_pos.y, z));
-	}
-
-	ImGui::SliderFloat("Z", &y, -300.0f, 300.0f);
-	if (y != lastY) {
-		lastY = y;
-		Vector3 cam_pos = camera_.getPosition();
-		camera_.ChangePosition(Vector3(cam_pos.x, y, cam_pos.z));
-	}
-
-	if (ImGui::Button("Button"))
-		counter++;
-	ImGui::SameLine();
-	ImGui::Text("counter = %d", counter);
+	ImGui::SliderInt("Samples", &samples_per_pixel_, 1, 100000);
 
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	ImGui::End();

@@ -105,6 +105,7 @@ public:
 	float reflectivity; /*!< Koeficient odrazivosti. */
 	float ior; /*!< Index lomu. */
 	int illum;
+	int shader;
 	Vector3 attenuation;
 
 	static const char kDiffuseMapSlot; /*!< Èíslo slotu difuzní textury. */

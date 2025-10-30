@@ -44,7 +44,7 @@ private:
 	bool hard_shadows_{ true };
 	bool use_super_sampling_{ true };
 	bool useBVH{ false };
-	int max_depth_ = 5;
+	int max_depth_ = 10;
 	BVH bvh;
 	int iterationRTC = 0;
 	int iterationBVH = 0;
@@ -53,30 +53,15 @@ private:
 	double avg_timeRTC = 0.0;
 	double avg_timeBVH = 0.0;
 	std::mt19937 rng_{ 123 };
-	int samples_per_pixel_{ 9 };
+	int samples_per_pixel_{ 10 };
 	
 
 	// Whitted ray tracer functions
-	Color4f Trace(RTCRay ray, int depth, int max_depth = 10, bool is_inside = false);
-	Color4f CalculatePhongIllumination(
-		const RTCGeometry& geometry,
-		const RTCRayHit& ray_hit,
-		const Vector3& hit_point,
-		const Vector3& normal,
-		const Vector3& geometric_normal,
-		const Material* material,
-		const Vector3& view_dir,
-		int depth,
-		int max_depth,
-		bool is_inside,
-		bool is_entering);
-	Color4f CalculateReflectedColor(
-		const Vector3& view_dir,
-		const Vector3& normal,
-		const Vector3& hit_point,
-		int depth,
-		int max_depth,
-		bool is_inside);
+	Color4f Trace(RTCRay ray, int depth, int max_depth);
+	void sample_hemisphere(Vector3 normal, Vector3& omega_i, float& pdf);
+	RTCRay make_secondary_ray(Vector3 origin, Vector3 direction);
+	Vector3 local_to_world(Vector3 local_dir, Vector3 normal);
+
 	float ACESFilm(float x);
 	Color4f ToneMapACES(const Color4f& hdr);
 	void myIntersect(RTCRayHit& ray_hit);

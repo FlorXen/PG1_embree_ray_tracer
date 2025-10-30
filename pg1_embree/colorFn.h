@@ -20,6 +20,7 @@ inline Color4f compress_color(Color4f color) {
 		compress_canal(color.b),
 		color.a
 	};
+	
 }
 
 inline float expand_canal(float u) {
