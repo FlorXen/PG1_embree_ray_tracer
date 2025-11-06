@@ -177,7 +177,8 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 {
 	// Check recursion depth
 	if (depth >= max_depth) {
-		return Color4f{0.0f, 0.0f, 0.0f, 1.0f}; // black background
+		//return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f }; // black background
+		return Color4f{ 1.0f, 1.0f, 1.0f, 1.0f }; // white background
 	}
 
 	// FindNearestIntersection
@@ -197,13 +198,15 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 	rtcIntersect1(scene_, &context, &ray_hit);
 
 	if (ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-		return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f }; // black background
+		//return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f }; // black background
+		return Color4f{ 1.0f, 1.0f, 1.0f, 1.0f }; // white background
+
 	}
 
 	// Get intersection data
 	RTCGeometry geometry = rtcGetGeometry(scene_, ray_hit.hit.geomID);
 
-	// Získání interpolované normály aby nevznily artefakty při osvětlení
+	// Získání interpolované normály
 	Normal3f normal;
 	rtcInterpolate0(geometry, ray_hit.hit.primID, ray_hit.hit.u, ray_hit.hit.v,
 		RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE, 0, &normal.x, 3);
@@ -226,8 +229,7 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 		ray.org_z + ray_hit.ray.tfar * ray.dir_z
 	);
 
-	if (hit_material->shader == 6) {  // Mirror material
-
+	if (hit_material->shader == 6) { // MIRROR MATERIAL
 		// perfect reflection direction: r = d - 2(d·n)n
 		Vector3 reflection = ray_dir - surface_normal * (2.0f * ray_dir.DotProduct(surface_normal));
 		reflection.Normalize();
@@ -242,43 +244,43 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 
 		return result;
 	}
-	else {  // Diffuse material
 
-		Vector3 L_e = hit_material->emission;
+	// DIFFUSE MATERIAL
 
-		if (L_e.x > 0.0f || L_e.y > 0.0f || L_e.z > 0.0f) {
-			return Color4f{ L_e.x, L_e.y, L_e.z, 1.0f }; // we hit a source and stopped our light path here
-		}
-
-		if (ray_dir.DotProduct(surface_normal) >= 0.0f) {
-			surface_normal = -surface_normal;
-		}
-
-		Vector3 omega_i;
-		float pdf;
-
-		Raytracer::sample_hemisphere(surface_normal, omega_i, pdf);
-
-		Color4f L_i = Trace(make_secondary_ray(hit_point, omega_i), depth + 1, max_depth);
-
-		Vector3 albedo = hit_material->diffuse;
-		Vector3 f_r = albedo / M_PI;
-		float cos_theta = omega_i.DotProduct(surface_normal);
-		Color4f f_r_color{ f_r.x, f_r.y, f_r.z, 1.0f };
-
-
-		Color4f L_r;
-		//L_r.r = f_r_color.r * L_i.r * cos_theta / pdf;
-		//L_r.g = f_r_color.g * L_i.g * cos_theta / pdf;
-		//L_r.b = f_r_color.b * L_i.b * cos_theta / pdf;
-		L_r.a = 1.0f;
-
-		L_r.r = albedo.x * L_i.r ;
-		L_r.g = albedo.y * L_i.g;
-		L_r.b = albedo.z * L_i.b;
-
-		return L_r;
+	Vector3 L_e = hit_material->emission;
+	if (L_e.x > 0.0f || L_e.y > 0.0f || L_e.z > 0.0f) {
+		return Color4f{ L_e.x, L_e.y, L_e.z, 1.0f };
 	}
+
+	if (ray_dir.DotProduct(surface_normal) >= 0.0f) {
+		surface_normal = -surface_normal;
+	}
+
+	// RUSSIAN ROULETTE
+	
+	Vector3 albedo = hit_material->diffuse;
+	float alpha = (std::max)((std::max)(albedo.x, albedo.y), albedo.z);
+	alpha = (std::min)(alpha, 0.95f);
+	std::uniform_real_distribution<float> r(0.0f, 1.0f);
+	float random_val = r(rng_);
+
+	if (random_val > alpha) {
+		return Color4f{ 0.0f, 0.0f, 0.0f, 1.0f };
+	}
+
+	Vector3 omega_i;
+	float pdf;
+	sample_hemisphere(surface_normal, omega_i, pdf);
+
+	Color4f L_i = Trace(make_secondary_ray(hit_point, omega_i), depth + 1, max_depth);
+
+	Color4f L_r;
+	L_r.r = (albedo.x * L_i.r) / alpha;
+	L_r.g = (albedo.y * L_i.g) / alpha;
+	L_r.b = (albedo.z * L_i.b) / alpha;
+	L_r.a = 1.0f;
+
+	return L_r;
 }
 
 RTCRay Raytracer::make_secondary_ray(Vector3 origin, Vector3 direction) {

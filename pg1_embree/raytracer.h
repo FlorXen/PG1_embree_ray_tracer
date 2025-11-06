@@ -44,7 +44,7 @@ private:
 	bool hard_shadows_{ true };
 	bool use_super_sampling_{ true };
 	bool useBVH{ false };
-	int max_depth_ = 10;
+	int max_depth_ = 50;
 	BVH bvh;
 	int iterationRTC = 0;
 	int iterationBVH = 0;

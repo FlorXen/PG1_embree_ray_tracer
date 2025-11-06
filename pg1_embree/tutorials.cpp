@@ -215,16 +215,31 @@ int tutorial_2()
 	return EXIT_SUCCESS;
 }
 
-/* raytracer mainloop */
-int tutorial_3( const std::string file_name, const char * config )
+// Update the parameter type of the `file_name` parameter in the `tutorial_3` function to `std::string&`
+// This ensures that the `file_name` variable can be modified within the function.
+
+int tutorial_3(const char* config)
 {
-	//SimpleGuiDX11 gui( 640, 480 );
-	//gui.MainLoop();
 
-	Raytracer raytracer(640, 480, deg2rad( 48.0 ), Vector3( -40, -1000, 250 ), Vector3( 0, 0, 250 ), config );
+	std::string file_name = "";
+   switch (1) {
+       case 1:
+           file_name = "../../../data/cornell_box2.obj";
+           {
+               Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(-40, -1000, 250), Vector3(0, 0, 250), config); // cornel box
+               raytracer.LoadScene(file_name);
+               raytracer.MainLoop();
+           }
+           break;
+       case 2:
+		   file_name = "../../../data/geosphere.obj";
+           {
+               Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(0, -6, 0), Vector3(0, 0, 0), config); // geosphere
+               raytracer.LoadScene(file_name);
+               raytracer.MainLoop();
+           }
+           break;
+   }
 
-	raytracer.LoadScene( file_name );
-	raytracer.MainLoop();
-
-	return EXIT_SUCCESS;
+   return EXIT_SUCCESS;
 }
