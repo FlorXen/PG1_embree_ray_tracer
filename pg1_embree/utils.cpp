@@ -176,7 +176,7 @@ std::string TimeToString( const double t )
 
 char * LTrim( char * s )
 {
-    while ( isspace( *s ) || ( *s == 0 ) )
+    while ( isspace( static_cast<unsigned char>( *s ) ) || ( *s == 0 ) )
 	{
 		++s;
 	};
@@ -188,7 +188,7 @@ char * RTrim( char * s )
 {
     char * back = s + strlen( s );
 
-    while ( isspace( *--back ) );
+    while ( isspace( static_cast<unsigned char>( *--back ) ) );
 
     *( back + 1 ) = '\0';
 

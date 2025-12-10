@@ -39,7 +39,7 @@ public:
 
 	\return I-tý vrchol trojúhelníka.
 	*/
-	Vertex vertex( const int i );
+	Vertex vertex( const int i ) const;
 	
 	Vector3 centroid = {0,0,0};
 	bool is_centroid_computed = false;

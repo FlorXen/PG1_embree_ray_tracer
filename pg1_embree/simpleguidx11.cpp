@@ -86,6 +86,7 @@ Color4f SimpleGuiDX11::get_pixel( const int x, const int y, const float t )
 void SimpleGuiDX11::Producer()
 {
 	const unsigned int num_threads = (std::max)(1u, std::thread::hardware_concurrency() - 1);
+	//const unsigned int num_threads = 1;
 	const int tile_size = 32;
 	const int tiles_x = (width_ + tile_size - 1) / tile_size;
 	const int tiles_y = (height_ + tile_size - 1) / tile_size;

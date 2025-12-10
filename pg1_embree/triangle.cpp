@@ -10,7 +10,7 @@ Triangle::Triangle( const Vertex & v0, const Vertex & v1, const Vertex & v2, Sur
 	assert( !is_degenerate() );
 }
 
-Vertex Triangle::vertex( const int i )
+Vertex Triangle::vertex( const int i ) const
 {
 	return vertices_[i];
 }

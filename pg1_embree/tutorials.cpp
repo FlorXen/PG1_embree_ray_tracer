@@ -220,26 +220,28 @@ int tutorial_2()
 
 int tutorial_3(const char* config)
 {
-
+	// zastarale switchovani scen
 	std::string file_name = "";
-   switch (1) {
-       case 1:
-           file_name = "../../../data/cornell_box2.obj";
-           {
-               Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(-40, -1000, 250), Vector3(0, 0, 250), config); // cornel box
-               raytracer.LoadScene(file_name);
-               raytracer.MainLoop();
-           }
-           break;
-       case 2:
-		   file_name = "../../../data/geosphere.obj";
-           {
-               Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(0, -6, 0), Vector3(0, 0, 0), config); // geosphere
-               raytracer.LoadScene(file_name);
-               raytracer.MainLoop();
-           }
-           break;
-   }
+	   switch (1) {
+		   case 1:
+			   file_name = "../../../data/cornell_box2.obj";
+			   {
+				   const Color4f bg_color = Color4f{ 0, 0, 0, 1 };
+				   Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(-40, -1000, 250), Vector3(0, 0, 250), config, bg_color); // cornel box
+				   raytracer.LoadScene(file_name);
+				   raytracer.MainLoop();
+			   }
+			   break;
+		   case 2:
+			   file_name = "../../../data/geosphere.obj";
+			   {
+				   const Color4f bg_color = Color4f{ 1, 1, 1, 1 };
+				   Raytracer raytracer(640, 480, deg2rad(48.0), Vector3(0, -6, 0), Vector3(0, 0, 0), config, bg_color); // geosphere
+				   raytracer.LoadScene(file_name);
+				   raytracer.MainLoop();
+			   }
+			   break;
+	   }
 
    return EXIT_SUCCESS;
 }
