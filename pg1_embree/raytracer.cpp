@@ -237,14 +237,12 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 		ray.org_z + ray_hit.ray.tfar * ray.dir_z
 	);
 
-	// Ensure correct normal orientation (pointing towards incoming ray)
 	bool entering = true;
 	if (ray_dir.DotProduct(surface_normal) >= 0.0f) {
 		surface_normal = -surface_normal;
 		entering = false;
 	}
 
-	// Handle different material types based on shader value
 	switch (hit_material->shader) {
 		case 1: // LAMBERTOVSKÝ MATERIÁL
 			return TraceLambertian(hit_material, surface_normal, hit_point, depth, max_depth);
@@ -267,7 +265,7 @@ Color4f Raytracer::Trace(RTCRay ray, int depth, int max_depth)
 	}
 }
 
-// Lambertovský materiál - pouze difuzní odraz
+// Lambertovský materiál
 Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, Vector3 hit_point, int depth, int max_depth)
 {
 	Vector3 k_d = material->diffuse;
@@ -304,9 +302,9 @@ Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, V
 			// Kontrola, zda světlo svítí směrem k povrchu
 			if (cos_theta_surface > 0.001f && cos_theta_light > 0.001f)
 			{
-				// Visibility test - shadow ray
+				// Visibility test
 				RTCRay shadow_ray = make_secondary_ray(hit_point, to_light);
-				shadow_ray.tfar = distance - 0.001f;  // Ukončit těsně před světlem
+				shadow_ray.tfar = distance - 0.001f;
 
 				RTCHit shadow_hit;
 				shadow_hit.geomID = RTC_INVALID_GEOMETRY_ID;
@@ -319,11 +317,8 @@ Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, V
 				rtcInitIntersectContext(&context);
 				rtcIntersect1(scene_, &context, &shadow_ray_hit);
 
-				// Pokud paprsek nedorazil k světlu, je ve stínu
 				if (shadow_ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID)
 				{
-					// Geometrický term: převod z solid angle PDF na area PDF
-					// pdf_solid_angle = pdf_area * distance^2 / cos_theta_light
 					float geometric_term = cos_theta_light / distance_sq;
 
 					if (geometric_term > 1e-6f && light_pdf > 1e-6f)
@@ -383,7 +378,7 @@ Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, V
 
 			if (hit_mat && hit_mat->shader == 2)
 			{
-				// Zasáhli jsme světlo - aplikuj MIS
+				// Zasáhli jsme světlo
 				// Vypočti PDF pro light sampling tohoto bodu
 				Vector3 hit_light_point(
 					indirect_ray.org_x + indirect_ray_hit.ray.tfar * indirect_ray.dir_x,
@@ -445,7 +440,6 @@ Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, V
 		{
 			// Paprsek zasáhl POZADÍ
 
-			// Aplikuj Lambert BRDF
 			float brdf_value = 1.0f / M_PI;
 			float weight = brdf_value * cos_theta_i / pdf_brdf;
 
@@ -465,8 +459,7 @@ Color4f Raytracer::TraceLambertian(Material* material, Vector3 surface_normal, V
 	return L_r;
 }
 
-// Phong materiál - kombinace difuzního a spekulárního odrazu
-// Phong materiál s NEE (Next Event Estimation) a MIS
+// Phong materiál
 Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector3 ray_dir,
 	Vector3 hit_point, int depth, int max_depth)
 {
@@ -513,14 +506,10 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 	Color4f L_r = { 0.0f, 0.0f, 0.0f, 1.0f };
 	float xi = r(rng_);
 
-	// ========================================================================
 	// ROZHODNUTÍ: Spekulární nebo difuzní cesta
-	// ========================================================================
 
 	if (xi < p_spec) {
-		// ====================================================================
 		// SPEKULÁRNÍ CESTA
-		// ====================================================================
 
 		Color4f L_direct = { 0.0f, 0.0f, 0.0f, 1.0f };
 		Color4f L_indirect = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -529,9 +518,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 		Vector3 R = ray_dir - surface_normal * (2.0f * ray_dir.DotProduct(surface_normal));
 		R.Normalize();
 
-		// ----------------------------------------------------------------
-		// 1. DIRECT LIGHTING - Light Sampling pro spekulární složku
-		// ----------------------------------------------------------------
+		// 1. DIRECT LIGHTING
 		if (!light_sources_.empty())
 		{
 			Vector3 light_point, light_normal;
@@ -619,9 +606,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 			}
 		}
 
-		// ----------------------------------------------------------------
-		// 2. INDIRECT LIGHTING - BRDF Sampling
-		// ----------------------------------------------------------------
+		// 2. INDIRECT LIGHTING
 		float pdf_phong;
 		Vector3 omega_i = sample_phong_lobe(R, shininess, pdf_phong);
 
@@ -672,7 +657,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 
 				if (hit_mat && hit_mat->shader == 2)
 				{
-					// Zasáhli jsme světlo - aplikuj MIS
+					// Zasáhli jsme světlo
 					float light_area_pdf = 0.0f;
 					for (const auto& light : light_sources_)
 					{
@@ -713,7 +698,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 				}
 				else
 				{
-					// Nezasáhli světlo - standardní indirect
+					// Nezasáhli světlo
 					float weight = phong_brdf * cos_theta_i / pdf_phong;
 
 					if (std::isfinite(weight) && weight >= 0.0f)
@@ -745,16 +730,12 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 
 	}
 	else {
-		// ====================================================================
 		// DIFUZNÍ CESTA
-		// ====================================================================
 
 		Color4f L_direct = { 0.0f, 0.0f, 0.0f, 1.0f };
 		Color4f L_indirect = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-		// ----------------------------------------------------------------
-		// 1. DIRECT LIGHTING - Light Sampling pro difuzní složku
-		// ----------------------------------------------------------------
+		// 1. DIRECT LIGHTING
 		if (!light_sources_.empty())
 		{
 			Vector3 light_point, light_normal;
@@ -813,9 +794,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 			}
 		}
 
-		// ----------------------------------------------------------------
-		// 2. INDIRECT LIGHTING - BRDF Sampling (hemisphere)
-		// ----------------------------------------------------------------
+		// 2. INDIRECT LIGHTING 
 		Vector3 omega_i;
 		float pdf_lambert;
 		sample_hemisphere(surface_normal, omega_i, pdf_lambert);
@@ -846,7 +825,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 
 				if (hit_mat && hit_mat->shader == 2)
 				{
-					// Zasáhli jsme světlo - aplikuj MIS
+					// Zasáhli jsme světlo
 					float light_area_pdf = 0.0f;
 					for (const auto& light : light_sources_)
 					{
@@ -872,7 +851,6 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 						float pdf_light_solid = light_area_pdf * (distance * distance) /
 							(cos_theta_light + 1e-6f);
 
-						// MIS weight
 						float mis_weight = PowerHeuristic(pdf_lambert, pdf_light_solid);
 
 						float brdf_value = 1.0f / M_PI;
@@ -885,7 +863,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 				}
 				else
 				{
-					// Nezasáhli světlo - standardní indirect
+					// Nezasáhli světlo
 					float brdf_value = 1.0f / M_PI;
 					float weight = brdf_value * cos_theta_i / pdf_lambert;
 
@@ -913,9 +891,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 		L_r.b = (L_direct.b + L_indirect.b) * compensation;
 	}
 
-	// ========================================================================
 	// Aplikace ruské rulety
-	// ========================================================================
 	L_r.r /= alpha;
 	L_r.g /= alpha;
 	L_r.b /= alpha;
@@ -924,7 +900,7 @@ Color4f Raytracer::TracePhong(Material* material, Vector3 surface_normal, Vector
 	return L_r;
 }
 
-// Zrcadlový materiál - odraz
+// Zrcadlový materiál
 Color4f Raytracer::TraceMirror(Material* material, Vector3 surface_normal, Vector3 ray_dir, Vector3 hit_point, int depth, int max_depth)
 {
 	// Perfektní odraz: r = d - 2(d·n)n
@@ -1049,12 +1025,8 @@ float Raytracer::ibeta(float x, float a, float b) {
 	if (x >= 1.0f) return 1.0f;
 	return std::exp(std::lgamma(a + b) - std::lgamma(a) - std::lgamma(b)
 		+ a * std::log(x) + b * std::log(1.0f - x)) / a;
-	// Poznámka: Toto je zjednodušená verze. Plná implementace je složitější,
-	// ale pro naše účely může stačit. Pro robustnost zvažte `boost::math::beta`.
 }
 
-// Funkce `calc_I_M` ze slajdu `image_ec843b.png`
-// Zde `n` je váš `shininess` (gamma) a `NdotV` je cos_theta_o
 float Raytracer::calc_I_M(float NdotV, float n) {
 	float costerm = NdotV;
 	float sintrm_sq = 1.0f - costerm * costerm;
@@ -1075,17 +1047,12 @@ float Raytracer::calc_I_M(float NdotV, float n) {
 		);
 }
 
-// Schlickova aproximace pro Fresnelův člen (ze slajdu image_ec871c.png)
-// F0 je odrazivost při 0 stupních, cos_theta je kosinus úhlu pohledu
 float Raytracer::schlick_fresnel(float F0, float cos_theta) {
 	float one_minus_cos = 1.0f - cos_theta;
 	float one_minus_cos_5 = one_minus_cos * one_minus_cos * one_minus_cos * one_minus_cos * one_minus_cos;
 	return F0 + (1.0f - F0) * one_minus_cos_5;
 }
 
-// Vzorkování směru podle Phongova laloku
-// Vstup: R (perfektní odraz), shininess (gamma)
-// Výstup: Vzorkovaný směr (omega_i) a jeho PDF
 Vector3 Raytracer::sample_phong_lobe(const Vector3& R, float shininess, float& pdf)
 {
 	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
@@ -1105,11 +1072,8 @@ Vector3 Raytracer::sample_phong_lobe(const Vector3& R, float shininess, float& p
 	// Transformace z lokálního prostoru (kde Z je R) do světového prostoru
 	Vector3 sampled_direction = local_to_world(local_dir, R);
 	
-	// KONTROLA: Ujistíme se, že vzorkovaný směr není "za" povrchem
-	// Pokud ano, vrátíme perfektní odraz jako fallback
 	if (sampled_direction.DotProduct(R) < 0.0f) {
-		// Fallback na perfektní odraz
-		pdf = 1.0f; // Delta funkce
+		pdf = 1.0f;
 		return R;
 	}
 	
@@ -1155,6 +1119,7 @@ void Raytracer::sample_hemisphere(Vector3 normal, Vector3& omega_i, float& pdf)
 
 Vector3 Raytracer::local_to_world(Vector3 local_dir, Vector3 normal)
 {
+	// Claude
 	// Create orthonormal basis (o1, o2, n) around normal n
 
 	// Step 1: Find any non-parallel vector to normal
@@ -1186,7 +1151,7 @@ Vector3 Raytracer::local_to_world(Vector3 local_dir, Vector3 normal)
 }
 
 
-// NEE (Next Event Estimation) + MIS Implementation
+// NEE (Next Event Estimation)
 
 // Sesbírání všech světelných zdrojů ze scény
 void Raytracer::CollectLightSources()
@@ -1246,7 +1211,6 @@ Vector3 Raytracer::SampleTriangle(const Triangle* tri, float& pdf)
 	float xi1 = dist(rng_);
 	float xi2 = dist(rng_);
 
-	// Uniform sampling of triangle using barycentric coordinates
 	float sqrt_xi1 = std::sqrt(xi1);
 	float u = 1.0f - sqrt_xi1;
 	float v = xi2 * sqrt_xi1;
@@ -1258,7 +1222,6 @@ Vector3 Raytracer::SampleTriangle(const Triangle* tri, float& pdf)
 
 	Vector3 point = v0 * u + v1 * v + v2 * w;
 
-	// PDF = 1 / area (uniform sampling na ploše)
 	float area = TriangleArea(tri);
 	pdf = 1.0f / area;
 
@@ -1274,7 +1237,6 @@ bool Raytracer::SampleLight(Vector3& light_point, Vector3& light_normal,
 		return false;
 	}
 
-	// Vybrat náhodné světlo úměrně jeho ploše
 	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 	float xi = dist(rng_) * total_light_area_;
 
@@ -1291,17 +1253,14 @@ bool Raytracer::SampleLight(Vector3& light_point, Vector3& light_normal,
 		}
 	}
 
-	// Fallback na poslední světlo (pro numerické chyby)
 	if (!selected_light)
 	{
 		selected_light = &light_sources_.back();
 	}
 
-	// Vzorkuj bod na vybraném trojúhelníku
 	float triangle_pdf;
 	light_point = SampleTriangle(selected_light->triangle, triangle_pdf);
 
-	// Vypočti normálu trojúhelníku
 	Vector3 v0 = selected_light->triangle->vertex(0).position;
 	Vector3 v1 = selected_light->triangle->vertex(1).position;
 	Vector3 v2 = selected_light->triangle->vertex(2).position;
@@ -1311,7 +1270,6 @@ bool Raytracer::SampleLight(Vector3& light_point, Vector3& light_normal,
 	light_normal = edge1.CrossProduct(edge2);
 	light_normal.Normalize();
 
-	// Celková PDF = (pravděpodobnost výběru světla) * (PDF na povrchu světla)
 	float light_selection_prob = selected_light->area / total_light_area_;
 	pdf = triangle_pdf * light_selection_prob;
 
@@ -1320,7 +1278,6 @@ bool Raytracer::SampleLight(Vector3& light_point, Vector3& light_normal,
 	return true;
 }
 
-// Power heuristic pro MIS (β = 2)
 float Raytracer::PowerHeuristic(float pdf_a, float pdf_b)
 {
 	float a = pdf_a * pdf_a;
